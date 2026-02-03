@@ -1,4 +1,4 @@
-FROM xxxxrt666/gpt-sovits:latest-cu126
+FROM xxxxrt666/gpt-sovits
 
 ARG NODE_MAJOR=24
 RUN apt-get update && apt-get install -y ca-certificates curl gnupg
@@ -7,10 +7,14 @@ RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg -
 RUN echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
 RUN apt-get update && apt-get install -y nodejs
 
-RUN apt-get update && apt-get install -y git cmake build-essential
+RUN apt-get update && apt-get install -y git cmake build-essential screen
 RUN git clone https://github.com/ggml-org/whisper.cpp.git /app/whisper
 RUN cd /app/whisper && CC=/usr/bin/gcc CXX=/usr/bin/g++ cmake -B build && cmake --build build -j --config Release
-COPY whisper/models/ggml-base.bin /app/whisper/models
+RUN cd /app/whisper && sh ./models/download-ggml-model.sh base
+
+RUN mkdir -p /cache/ollama
+RUN curl -fsSL https://ollama.com/download/ollama-linux-amd64.tar.zst | tar x -C /cache/ollama --zstd
+RUN screen -dm bash -c "OLLAMA_MODELS=/cache/ollama-models /cache/ollama/bin/ollama serve" && sleep 2 && /cache/ollama/bin/ollama pull llama3.1
 
 COPY back/index.ts /app/back/index.ts
 COPY back/package.json /app/back/package.json
@@ -18,9 +22,6 @@ COPY back/package-lock.json /app/back/package-lock.json
 COPY back/main_sample.wav /app/back/main_sample.wav
 
 RUN cd /app/back && npm install
-
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
 
 RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
   rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/text/G2PWModel && \
@@ -31,4 +32,5 @@ RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
   ln -s /workspace/models/asr_models /workspace/GPT-SoVITS/tools/asr/models && \
   ln -s /workspace/models/uvr5_weights /workspace/GPT-SoVITS/tools/uvr5/uvr5_weights
 
-CMD ["/app/start.sh"]
+WORKDIR /app/back
+CMD ["npx", "tsx", "index.ts"]
