@@ -1,8 +1,9 @@
-import express from "express";
-import cors from "cors";
+import * as https from "https";
 import * as child_process from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import express from "express";
+import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
 
 const whisper = child_process.spawn("/app/whisper/build/bin/whisper-server", ["-m", "/app/whisper/models/ggml-base.bin", "--port", "8081"]);
@@ -131,7 +132,5 @@ app.post("/run", express.raw({ type: "*/*" }), async (req, res) => {
     res.write("--audiobound--\r\n");
     res.end();
 });
-
-app.listen(8080);
-
-console.log("API server running on port 8080");
+https.createServer({ key: fs.readFileSync("server.key"), cert: fs.readFileSync("server.cert") }, app)
+    .listen(4433, () => console.log("Server running on port 4433"));

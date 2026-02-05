@@ -20,6 +20,7 @@ COPY front /app/front
 
 RUN cd /app/front && npm install && npm run build
 RUN cd /app/back && npm install
+RUN cd /app/back && openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server.key -out server.cert -subj "/C=FR/ST=IDF/L=Paris/O=Dev/CN=localhost"
 
 RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
   rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/text/G2PWModel && \
@@ -29,6 +30,8 @@ RUN rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
   ln -s /workspace/models/G2PWModel /workspace/GPT-SoVITS/GPT_SoVITS/text/G2PWModel && \
   ln -s /workspace/models/asr_models /workspace/GPT-SoVITS/tools/asr/models && \
   ln -s /workspace/models/uvr5_weights /workspace/GPT-SoVITS/tools/uvr5/uvr5_weights
+
+EXPOSE 4433
 
 WORKDIR /app/back
 CMD ["npx", "tsx", "index.ts"]
