@@ -19,6 +19,7 @@ sovits.stderr.pipe(process.stderr);
 
 const app = express();
 app.use(cors());
+app.use(express.static("/app/front/build"));
 app.post("/run", express.raw({ type: "*/*" }), async (req, res) => {
 
     console.time("ffmpeg");

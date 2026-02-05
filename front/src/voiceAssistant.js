@@ -86,7 +86,7 @@ export const VoiceAssistant = () => {
 
         const date = Date.now();
 
-        const response = await fetch("http://localhost:8080/run", {
+        const response = await fetch("/run", {
             method: "POST",
             body: blob
         });
