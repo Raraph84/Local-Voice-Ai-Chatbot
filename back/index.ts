@@ -5,7 +5,7 @@ import * as path from "path";
 import express from "express";
 import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 
 const whisper = child_process.spawn("/app/whisper/build/bin/whisper-server", ["-m", "/app/whisper/models/ggml-base.bin", "--port", "8081"]);
 whisper.stdout.pipe(process.stdout);
@@ -22,12 +22,12 @@ sovits.stderr.pipe(process.stderr);
 const app = express();
 app.use(cors());
 app.use(express.static("/app/front/build"));
-app.post("/run", express.raw({ type: "*/*" }), async (req, res) => {
 
+const run = async (input: Buffer, ws: WebSocket) => {
     console.time("ffmpeg");
     const inputPath = path.join(__dirname, `temp_${Date.now()}.mp3`);
     const outputPath = path.join(__dirname, `temp_${Date.now()}.wav`);
-    fs.writeFileSync(inputPath, req.body);
+    fs.writeFileSync(inputPath, input);
     await new Promise<void>((resolve, reject) => {
         ffmpeg(inputPath)
             .toFormat("wav")
@@ -63,8 +63,6 @@ app.post("/run", express.raw({ type: "*/*" }), async (req, res) => {
             stream: true
         })
     });
-
-    res.setHeader("Content-Type", "multipart/x-mixed-replace; boundary=audiobound");
 
     let response = "";
     let currentSentence = "";
@@ -115,10 +113,7 @@ app.post("/run", express.raw({ type: "*/*" }), async (req, res) => {
                     const audioBuffer = await sovits.arrayBuffer();
                     console.timeEnd("sovits");
 
-                    res.write("--audiobound\r\n");
-                    res.write("Content-Type: audio/wav\r\n\r\n");
-                    res.write(Buffer.from(audioBuffer));
-                    res.write("\r\n");
+                    ws.send(Buffer.from(audioBuffer));
                 }
             } catch (e) {
                 console.error("Error parsing JSON:", e);
@@ -130,9 +125,8 @@ app.post("/run", express.raw({ type: "*/*" }), async (req, res) => {
         console.log("Phrase finale:", currentSentence.trim());
     }
 
-    res.write("--audiobound--\r\n");
-    res.end();
-});
+    ws.send(JSON.stringify({ done: true }));
+};
 
 const server = https.createServer({ key: fs.readFileSync("server.key"), cert: fs.readFileSync("server.cert") }, app);
 
@@ -141,7 +135,7 @@ wss.on("connection", (ws) => {
     console.log("WebSocket client connected");
 
     ws.on("message", (message) => {
-        console.log("Received:", message.toString());
+        run(Buffer.from(message as ArrayBuffer), ws);
     });
 
     ws.on("close", () => {

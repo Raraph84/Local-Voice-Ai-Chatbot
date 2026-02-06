@@ -3,6 +3,9 @@ import { useEffect, useRef, useState } from "react";
 export const VoiceAssistant = () => {
     const [stream, setStream] = useState(null);
     const ws = useRef(null);
+    const audioQueue = useRef([]);
+    const isPlaying = useRef(false);
+    const audioRef = useRef(null);
 
     useEffect(() => {
         ws.current = new WebSocket("wss://" + window.location.hostname + ":4433");
@@ -11,8 +14,23 @@ export const VoiceAssistant = () => {
             console.log("WebSocket connected");
         };
 
-        ws.current.onmessage = (event) => {
-            console.log("WebSocket message:", event.data);
+        ws.current.onmessage = async (event) => {
+            if (typeof event.data === "string") {
+                console.log("WebSocket message:", event.data);
+                const data = JSON.parse(event.data);
+                if (data.done) {
+                    console.log("Voice assistant request completed");
+                    recording.current = false;
+                }
+                return;
+            }
+
+            const audioBlob = new Blob([event.data], { type: "audio/wav" });
+            audioQueue.current.push(audioBlob);
+            console.log("Audio chunk received:", event.data.size, "bytes");
+
+            if (!isPlaying.current)
+                playNext();
         };
 
         ws.current.onclose = () => {
@@ -21,6 +39,25 @@ export const VoiceAssistant = () => {
 
         return () => ws.current?.close();
     }, []);
+
+    const playNext = async () => {
+        if (audioQueue.current.length === 0) {
+            isPlaying.current = false;
+            return;
+        }
+        isPlaying.current = true;
+        const audioBlob = audioQueue.current.shift();
+        const url = URL.createObjectURL(audioBlob);
+        audioRef.current.src = url;
+        audioRef.current.volume = 0.2;
+
+        audioRef.current.onended = () => {
+            URL.revokeObjectURL(url);
+            playNext();
+        };
+
+        await audioRef.current.play();
+    };
 
     useEffect(() => {
         (async () => {
@@ -103,108 +140,9 @@ export const VoiceAssistant = () => {
         console.log("Silence detected, sending voice assistant request...");
 
         const blob = new Blob(recorders.current[0].data, { type: "audio/webm" });
-
-        const date = Date.now();
-
-        const response = await fetch("/run", {
-            method: "POST",
-            body: blob
-        });
-
-        const reader = response.body.getReader();
-        const audioQueue = [];
-        let isPlaying = false;
-        let buffer = new Uint8Array(0);
-
-        const playNext = async () => {
-            if (audioQueue.length === 0) {
-                isPlaying = false;
-                return;
-            }
-            isPlaying = true;
-            const audioBlob = audioQueue.shift();
-            const url = URL.createObjectURL(audioBlob);
-            audioRef.current.src = url;
-            audioRef.current.volume = 0.2;
-
-            audioRef.current.onended = () => {
-                URL.revokeObjectURL(url);
-                playNext();
-            };
-
-            await audioRef.current.play();
-        };
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            // Ajouter les nouvelles données au buffer
-            const newBuffer = new Uint8Array(buffer.length + value.length);
-            newBuffer.set(buffer);
-            newBuffer.set(value, buffer.length);
-            buffer = newBuffer;
-
-            // Convertir en texte pour chercher les boundaries
-            const text = new TextDecoder().decode(buffer);
-            const boundaryPattern = "--audiobound\r\n";
-
-            let pos = 0;
-            while ((pos = text.indexOf(boundaryPattern, pos)) !== -1) {
-                const nextBoundary = text.indexOf(boundaryPattern, pos + boundaryPattern.length);
-
-                if (nextBoundary === -1 && !done) {
-                    // Pas encore le prochain boundary, attendre plus de données
-                    break;
-                }
-
-                const endPos = nextBoundary !== -1 ? nextBoundary : text.length;
-                const part = text.substring(pos + boundaryPattern.length, endPos);
-
-                const headerEnd = part.indexOf("\r\n\r\n");
-                if (headerEnd !== -1) {
-                    // Calculer la position des données audio en bytes
-                    const audioStartText = pos + boundaryPattern.length + headerEnd + 4;
-                    const audioEndText = endPos;
-
-                    // Extraire les bytes audio
-                    const audioData = buffer.slice(audioStartText, audioEndText);
-
-                    // Enlever les \r\n à la fin si présents
-                    let cleanEnd = audioData.length;
-                    if (cleanEnd >= 2 && audioData[cleanEnd - 2] === 13 && audioData[cleanEnd - 1] === 10) {
-                        cleanEnd -= 2;
-                    }
-
-                    const cleanAudioData = audioData.slice(0, cleanEnd);
-
-                    if (cleanAudioData.length > 0) {
-                        const audioBlob = new Blob([cleanAudioData], { type: "audio/wav" });
-                        audioQueue.push(audioBlob);
-                        console.log("Audio chunk received:", cleanAudioData.length, "bytes", Date.now() - date, "ms");
-
-                        if (!isPlaying) {
-                            playNext();
-                        }
-                    }
-                }
-
-                if (nextBoundary !== -1) {
-                    // Supprimer la partie traitée du buffer
-                    buffer = buffer.slice(nextBoundary);
-                    break; // Re-vérifier depuis le début
-                } else {
-                    buffer = new Uint8Array(0);
-                    break;
-                }
-            }
-        }
-
-        console.log("Voice assistant request sent successfully");
-        recording.current = false;
+        const arrayBuffer = await blob.arrayBuffer();
+        ws.current.send(arrayBuffer);
     };
-
-    const audioRef = useRef(null);
 
     return <>
         <audio ref={audioRef} controls />
