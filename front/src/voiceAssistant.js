@@ -150,6 +150,8 @@ export const VoiceAssistant = () => {
         const blob = new Blob(recorders.current[0].data, { type: "audio/webm" });
         const arrayBuffer = await blob.arrayBuffer();
         ws.current.send(arrayBuffer);
+
+        recording.current = false;
     };
 
     return <>

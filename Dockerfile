@@ -15,10 +15,10 @@ RUN mkdir -p /cache/ollama
 RUN curl -fsSL https://ollama.com/download/ollama-linux-amd64.tar.zst | tar x -C /cache/ollama --zstd
 RUN screen -dm bash -c "OLLAMA_MODELS=/cache/ollama-models /cache/ollama/bin/ollama serve" && sleep 2 && /cache/ollama/bin/ollama pull llama3.1
 
-COPY back /app/back
 COPY front /app/front
-
 RUN cd /app/front && npm install && npm run build
+
+COPY back /app/back
 RUN cd /app/back && npm install
 RUN cd /app/back && openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server.key -out server.cert -subj "/C=FR/ST=IDF/L=Paris/O=Dev/CN=localhost"
 

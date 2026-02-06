@@ -7,6 +7,13 @@ import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
 import { WebSocketServer, WebSocket } from "ws";
 
+const sovitsSettings = {
+    text_lang: "en",
+    ref_audio_path: path.resolve("main_sample.wav"),
+    prompt_text: "This is a sample voice for you to just get started with because it sounds kind of cute, but just make sure this doesn't have long silences.",
+    prompt_lang: "en"
+};
+
 const whisper = child_process.spawn("/app/whisper/build/bin/whisper-server", ["-m", "/app/whisper/models/ggml-base.bin", "--port", "8081"]);
 whisper.stdout.pipe(process.stdout);
 whisper.stderr.pipe(process.stderr);
@@ -14,16 +21,43 @@ whisper.stderr.pipe(process.stderr);
 const ollama = child_process.spawn("/cache/ollama/bin/ollama", ["serve"], { env: { HOME: "/home", OLLAMA_MODELS: "/cache/ollama-models" } });
 ollama.stdout.pipe(process.stdout);
 ollama.stderr.pipe(process.stderr);
+const ollamaStarting = async (data: Buffer) => {
+    if (!data.toString().includes("Listening on")) return;
+    ollama.stderr.off("data", ollamaStarting);
+    await fetch("http://127.0.0.1:11434/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            model: "llama3.1",
+            messages: [{ role: "user", content: "Hello" }]
+        })
+    });
+    console.log("Ollama started!");
+};
+ollama.stderr.on("data", ollamaStarting);
 
 const sovits = child_process.spawn("python3", ["api_v2.py"], { cwd: "/workspace/GPT-SoVITS" });
 sovits.stdout.pipe(process.stdout);
 sovits.stderr.pipe(process.stderr);
+const sovitsStarting = async (data: Buffer) => {
+    if (!data.toString().includes("Uvicorn running on")) return;
+    sovits.stderr.off("data", sovitsStarting);
+    await fetch("http://127.0.0.1:9880/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hello!", ...sovitsSettings })
+    });
+    console.log("SoVITS started!");
+};
+sovits.stderr.on("data", sovitsStarting);
 
 const app = express();
 app.use(cors());
 app.use(express.static("/app/front/build"));
 
-const conversationHistory: { role: string, content: string }[] = [];
+const conversationHistory: { role: string, content: string }[] = [
+    { role: "system", content: "Please be concise and do quick replies that will be read aloud." }
+];
 
 const run = async (input: Buffer, ws: WebSocket) => {
     console.time("ffmpeg");
@@ -106,13 +140,7 @@ const run = async (input: Buffer, ws: WebSocket) => {
                     const sovits = await fetch("http://127.0.0.1:9880/tts", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            text: sentence,
-                            text_lang: "en",
-                            ref_audio_path: path.resolve("main_sample.wav"),
-                            prompt_text: "This is a sample voice for you to just get started with because it sounds kind of cute, but just make sure this doesn't have long silences.",
-                            prompt_lang: "en"
-                        })
+                        body: JSON.stringify({ text: sentence, ...sovitsSettings })
                     });
                     if (!sovits.ok) {
                         console.error("SoVITS error:", await sovits.text());
