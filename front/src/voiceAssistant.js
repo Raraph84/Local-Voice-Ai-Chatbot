@@ -6,6 +6,8 @@ export const VoiceAssistant = () => {
     const audioQueue = useRef([]);
     const isPlaying = useRef(false);
     const audioRef = useRef(null);
+    const [transcription, setTranscription] = useState("");
+    const [sentences, setSentences] = useState([]);
 
     useEffect(() => {
         ws.current = new WebSocket("wss://" + window.location.hostname + ":4433");
@@ -18,7 +20,13 @@ export const VoiceAssistant = () => {
             if (typeof event.data === "string") {
                 console.log("WebSocket message:", event.data);
                 const data = JSON.parse(event.data);
-                if (data.done) {
+
+                if (data.type === "transcription") {
+                    setTranscription(data.text);
+                    setSentences([]);
+                } else if (data.type === "sentence") {
+                    setSentences(prev => [...prev, data.text]);
+                } else if (data.done) {
                     console.log("Voice assistant request completed");
                     recording.current = false;
                 }
@@ -145,9 +153,29 @@ export const VoiceAssistant = () => {
     };
 
     return <>
-        <audio ref={audioRef} controls />
+        <audio ref={audioRef} />
 
-        <button onClick={handleRun}>Start Recording</button>
+        <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
+            <button onClick={handleRun} style={{ padding: "10px 20px", fontSize: "16px", cursor: "pointer" }}>
+                Start Recording
+            </button>
+
+            {transcription && (
+                <div style={{ marginTop: "20px", padding: "15px", backgroundColor: "#f0f0f0", borderRadius: "5px" }}>
+                    <h3 style={{ margin: "0 0 10px 0" }}>Transcription:</h3>
+                    <p style={{ margin: 0 }}>{transcription}</p>
+                </div>
+            )}
+
+            {sentences.length > 0 && (
+                <div style={{ marginTop: "20px", padding: "15px", backgroundColor: "#e8f4f8", borderRadius: "5px" }}>
+                    <h3 style={{ margin: "0 0 10px 0" }}>Réponse:</h3>
+                    {sentences.map((sentence, index) => (
+                        <p key={index} style={{ margin: "5px 0" }}>{sentence}</p>
+                    ))}
+                </div>
+            )}
+        </div>
     </>;
 };
 

@@ -53,6 +53,8 @@ const run = async (input: Buffer, ws: WebSocket) => {
     const whisperResult = await whisper.json();
     console.timeEnd("transcription");
 
+    ws.send(JSON.stringify({ type: "transcription", text: whisperResult.text }));
+
     console.time("ollama");
     const ollama = await fetch("http://127.0.0.1:11434/api/chat", {
         method: "POST",
@@ -93,6 +95,8 @@ const run = async (input: Buffer, ws: WebSocket) => {
                     console.log("Phrase complète:", currentSentence.trim());
                     const sentence = currentSentence.trim();
                     currentSentence = "";
+
+                    ws.send(JSON.stringify({ type: "sentence", text: sentence }));
 
                     console.time("sovits");
                     const sovits = await fetch("http://127.0.0.1:9880/tts", {
