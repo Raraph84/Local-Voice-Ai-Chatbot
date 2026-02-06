@@ -2,6 +2,26 @@ import { useEffect, useRef, useState } from "react";
 
 export const VoiceAssistant = () => {
     const [stream, setStream] = useState(null);
+    const ws = useRef(null);
+
+    useEffect(() => {
+        ws.current = new WebSocket("wss://" + window.location.hostname + ":4433");
+
+        ws.current.onopen = () => {
+            console.log("WebSocket connected");
+        };
+
+        ws.current.onmessage = (event) => {
+            console.log("WebSocket message:", event.data);
+        };
+
+        ws.current.onclose = () => {
+            console.log("WebSocket disconnected");
+        };
+
+        return () => ws.current?.close();
+    }, []);
+
     useEffect(() => {
         (async () => {
             setStream(await navigator.mediaDevices.getUserMedia({ audio: true }));

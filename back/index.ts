@@ -5,6 +5,7 @@ import * as path from "path";
 import express from "express";
 import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
+import { WebSocketServer } from "ws";
 
 const whisper = child_process.spawn("/app/whisper/build/bin/whisper-server", ["-m", "/app/whisper/models/ggml-base.bin", "--port", "8081"]);
 whisper.stdout.pipe(process.stdout);
@@ -132,5 +133,20 @@ app.post("/run", express.raw({ type: "*/*" }), async (req, res) => {
     res.write("--audiobound--\r\n");
     res.end();
 });
-https.createServer({ key: fs.readFileSync("server.key"), cert: fs.readFileSync("server.cert") }, app)
-    .listen(4433, () => console.log("Server running on port 4433"));
+
+const server = https.createServer({ key: fs.readFileSync("server.key"), cert: fs.readFileSync("server.cert") }, app);
+
+const wss = new WebSocketServer({ server });
+wss.on("connection", (ws) => {
+    console.log("WebSocket client connected");
+
+    ws.on("message", (message) => {
+        console.log("Received:", message.toString());
+    });
+
+    ws.on("close", () => {
+        console.log("WebSocket client disconnected");
+    });
+});
+
+server.listen(4433, () => console.log("Server running on port 4433"));
