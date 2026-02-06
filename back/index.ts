@@ -23,6 +23,8 @@ const app = express();
 app.use(cors());
 app.use(express.static("/app/front/build"));
 
+const conversationHistory: { role: string, content: string }[] = [];
+
 const run = async (input: Buffer, ws: WebSocket) => {
     console.time("ffmpeg");
     const inputPath = path.join(__dirname, `temp_${Date.now()}.mp3`);
@@ -55,13 +57,15 @@ const run = async (input: Buffer, ws: WebSocket) => {
 
     ws.send(JSON.stringify({ type: "transcription", text: whisperResult.text }));
 
+    conversationHistory.push({ role: "user", content: whisperResult.text });
+
     console.time("ollama");
     const ollama = await fetch("http://127.0.0.1:11434/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             model: "llama3.1",
-            messages: [{ role: "user", content: whisperResult.text }],
+            messages: conversationHistory,
             stream: true
         })
     });
@@ -125,9 +129,7 @@ const run = async (input: Buffer, ws: WebSocket) => {
         }
     }
 
-    if (currentSentence.trim()) {
-        console.log("Phrase finale:", currentSentence.trim());
-    }
+    conversationHistory.push({ role: "assistant", content: response });
 
     ws.send(JSON.stringify({ done: true }));
 };
