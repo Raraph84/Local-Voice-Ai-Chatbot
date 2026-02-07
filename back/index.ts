@@ -7,14 +7,7 @@ import cors from "cors";
 import ffmpeg from "fluent-ffmpeg";
 import { WebSocketServer, WebSocket } from "ws";
 
-const sovitsSettings = {
-    text_lang: "en",
-    ref_audio_path: path.resolve("main_sample.wav"),
-    prompt_text: "This is a sample voice for you to just get started with because it sounds kind of cute, but just make sure this doesn't have long silences.",
-    prompt_lang: "en"
-};
-
-const whisper = child_process.spawn("/app/whisper/build/bin/whisper-server", ["-m", "/app/whisper/models/ggml-base.bin", "--port", "8081"]);
+const whisper = child_process.spawn("/app/whisper/build/bin/whisper-server", ["-m", "/app/whisper/models/ggml-small.bin", "--port", "8081"]);
 whisper.stdout.pipe(process.stdout);
 whisper.stderr.pipe(process.stderr);
 
@@ -36,20 +29,25 @@ const ollamaStarting = async (data: Buffer) => {
 };
 ollama.stderr.on("data", ollamaStarting);
 
-const sovits = child_process.spawn("python3", ["api_v2.py"], { cwd: "/workspace/GPT-SoVITS" });
-sovits.stdout.pipe(process.stdout);
-sovits.stderr.pipe(process.stderr);
-const sovitsStarting = async (data: Buffer) => {
-    if (!data.toString().includes("Uvicorn running on")) return;
-    sovits.stderr.off("data", sovitsStarting);
-    await fetch("http://127.0.0.1:9880/tts", {
+const speakerVoice = new Blob([fs.readFileSync("main_sample.wav")], { type: "audio/wav" });
+
+const xtts = child_process.spawn("python3", ["xtts_server.py"], { env: { COQUI_TOS_AGREED: "1" } });
+xtts.stdout.pipe(process.stdout);
+xtts.stderr.pipe(process.stderr);
+const xttsStarting = async (data: Buffer) => {
+    if (!data.toString().includes("Running on all addresses")) return;
+    xtts.stderr.off("data", xttsStarting);
+    const formData = new FormData();
+    formData.append("text", "Salut !");
+    formData.append("speaker_wav", speakerVoice, "reference.wav");
+    formData.append("language", "fr");
+    await fetch("http://localhost:5000/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: "Hello!", ...sovitsSettings })
+        body: formData
     });
-    console.log("SoVITS started!");
+    console.log("XTTS started!");
 };
-sovits.stderr.on("data", sovitsStarting);
+xtts.stderr.on("data", xttsStarting);
 
 const app = express();
 app.use(cors());
@@ -81,7 +79,7 @@ const run = async (input: Buffer, ws: WebSocket) => {
     console.time("transcription");
     const form = new FormData();
     form.append("file", new Blob([wavBuffer]), "audio.wav");
-    form.append("language", "en");
+    form.append("language", "fr");
     const whisper = await fetch("http://127.0.0.1:8081/inference", {
         method: "POST",
         body: form
@@ -136,18 +134,21 @@ const run = async (input: Buffer, ws: WebSocket) => {
 
                     ws.send(JSON.stringify({ type: "sentence", text: sentence }));
 
-                    console.time("sovits");
-                    const sovits = await fetch("http://127.0.0.1:9880/tts", {
+                    console.time("tts");
+                    const formData = new FormData();
+                    formData.append("text", sentence);
+                    formData.append("speaker_wav", speakerVoice, "reference.wav");
+                    formData.append("language", "fr");
+                    const tts = await fetch("http://localhost:5000/generate", {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ text: sentence, ...sovitsSettings })
+                        body: formData
                     });
-                    if (!sovits.ok) {
-                        console.error("SoVITS error:", await sovits.text());
+                    if (!tts.ok) {
+                        console.error("TTS error:", await tts.text());
                         continue;
                     }
-                    const audioBuffer = await sovits.arrayBuffer();
-                    console.timeEnd("sovits");
+                    const audioBuffer = await tts.arrayBuffer();
+                    console.timeEnd("tts");
 
                     ws.send(Buffer.from(audioBuffer));
                 }
